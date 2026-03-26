@@ -1,0 +1,270 @@
+---
+title: "PilottoAquaSYNC"
+output: html_document
+date: "2026-03-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages('arrow') # for reading .parquet files
+library(arrow)
+library(tidyverse)
+install.packages('codyn')
+library(codyn)
+
+```
+
+```{r}
+setwd("~/Documents/FEM_work/Pilotto")
+```
+
+
+```{r}
+theme_set(theme_bw())
+```
+
+
+```{r}
+
+benthos<-
+read_parquet('BenthicMacroinvertebrates.parquet')
+```
+
+```{r}
+benthos_coords<-
+  benthos[,c(5,8,9)]
+
+
+write.csv(benthos_coords, 'benthos_coords.csv')
+```
+
+
+
+#########################################
+##### import the taxon cleaned macroinvertebrate data, for initial analyses
+##############################
+
+```{r}
+benthos_family<-
+read_parquet('BenthicMacroinvertebrates_Family_and_higher.parquet')
+```
+
+
+
+# there are issues with SiteID (some are just numbers, not sure it's ok )
+```{r}
+table(benthos_family$SiteID)
+table(benthos_family$SampleID)
+
+```
+
+# convert date to Julian
+```{r}
+benthos_family$Date_julian<-
+  as.numeric(benthos_family$Date)
+  
+```
+
+
+```{r}
+tmp<-
+  benthos_family %>% 
+  filter(Country=='Norway')
+
+unique(tmp$SiteID)
+
+```
+
+```{r}
+codyn::synchrony(tmp, time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
+```
+
+# get number of unique taxa and unique date for siteID
+#also get richness per site/time combination
+```{r}
+
+Site_taxa_counts<-
+benthos_family %>% 
+  group_by(SiteID) %>% 
+  summarise(taxa_count= n_distinct(Taxon.harm)) %>% 
+  arrange(taxa_count)
+
+Site_date_counts<-
+benthos_family %>% 
+  group_by(SiteID) %>% 
+  summarise(date_count= n_distinct(Date_julian)) %>% 
+  arrange(date_count)
+
+Site_taxa_counts_Date<-
+benthos_family %>% 
+  group_by(SiteID, Date) %>% 
+  summarise(taxa_rich= n_distinct(Taxon.harm)) 
+
+Site_taxa_counts_Date$Country<-
+  benthos_family$Country[match(Site_taxa_counts_Date$SiteID, benthos_family$SiteID)]
+
+
+  
+```
+
+```{r}
+Site_taxa_counts_Date %>% 
+  mutate(Date_julian=as.numeric(Date)) %>% 
+  ggplot() +aes(Date_julian, taxa_rich, col=Country)+geom_smooth(method='lm',se=T)
+```
+
+
+
+# some sites have only one time point
+#example of sites with no temporal observation
+```{r}
+benthos_family %>% 
+  filter(SiteID=="SE655380-155738|sublittoral")
+
+
+benthos_family %>% 
+  filter(SiteID=="SE629026-147562|sublittoral")
+
+
+```
+
+#subset based on only siteID with >1 time observation
+```{r}
+benthos_family_subs<-
+benthos_family %>% 
+  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>1,]$SiteID)
+```
+
+
+# first synchrony run shows issues with replicated values
+```{r}
+codyn::synchrony(benthos_family_subs, time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
+```
+
+Error in check_single(df, time.var, species.var, replicate.var) : 
+  Multiple records for one or more species found at:
+ Taxon.harm          SiteID       
+ "Ameletidae"        "BEA01_a"    
+ "Baetidae"          "BEA01_a"    
+ "Capniidae"         "BEA01_a"    
+ "Chironomidae"      "BEA01_a"    
+ "Chloroperlidae"    "BEA01_a"    
+ "Enchytraeidae"     "BEA01_a"    
+ "Ephemerellidae"    "BEA01_a"    
+ "Glossosomatidae"   "BEA01_a"    
+ "Heptageniidae"     "BEA01_a"    
+ "Hydropsychidae"    "BEA01_a"    
+ "Lepidostomatidae"  "BEA01_a"    
+ "Naididae"          "BEA01_a"    
+ "Nemouridae"        "BEA01_a"    
+ "Pediciidae"        "BEA01_a"    
+ "Perlodidae"        "BEA01_a"    
+ "Planariidae"       "BEA01_a"    
+ "Rhyacophilidae"    "BEA01_a"    
+ "Taeniopterygidae"  "BEA01_a"    
+ "Ameletidae"        "BEL01_c"    
+ "Baetidae"          "BEL01_c"    
+ "Capniidae"         "BEL01_c"    
+ "Chironomidae"      "BEL01_c"    
+ "Chloroperlidae"    "BEL01_c"    
+ "Collembola"        "BEL01_c"    
+ "Dixidae"           "BEL01_c"    
+ "Elmidae"           "BEL01_c"
+
+
+
+# check the problems with duplicated data in some Canada sites
+*to idetify duplicates, I exlcude the 'sample_id' column*
+#e.g. the BEA01_a site
+
+*some species have duplicated entries, with identical abundance values and dates 2, or 3 times*
+```{r}
+BEA01_a<-
+benthos_family_subs %>% 
+  filter(SiteID =="BEA01_a")
+
+xx<-BEA01_a[duplicated(BEA01_a[,-10]) |duplicated(BEA01_a[,-10], fromLast = T)  ,]
+
+
+benthos_family_subs %>% 
+  filter(SiteID =="BX01_b")
+
+
+```
+
+# extract all duplicated data
+```{r}
+dupli<-benthos_family_subs[duplicated(benthos_family_subs[,-10]) |duplicated(benthos_family_subs[,-10], fromLast = T)  ,]
+```
+
+# remove all duplicates (but keep the first entry)
+```{r}
+benthos_family_subs[,-10] %>% 
+  distinct()
+ 
+```
+
+
+# extract the Loreau and Gross synchrony (community synch), for the cleaned benthos df
+(no duplicates, no sites w/o time series)
+```{r}
+benthos_fam_synchrony<-
+codyn::synchrony(benthos_family_subs[,-10] %>% distinct(),
+                 
+                 time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
+
+benthos_fam_synchrony$Gross<-
+  codyn::synchrony(benthos_family_subs[,-10] %>% distinct(),
+                 
+                 time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID', metric = 'Gross')$synchrony
+
+```
+
+# add some covariates to sites synchrony
+```{r}
+benthos_fam_synchrony$Lon<-
+  benthos_family_subs$Lon[match(benthos_fam_synchrony$SiteID, benthos_family_subs$SiteID)]
+
+benthos_fam_synchrony$Lat<-
+  benthos_family_subs$Lat[match(benthos_fam_synchrony$SiteID, benthos_family_subs$SiteID)]
+
+benthos_fam_synchrony$n_time<-
+  Site_date_counts$date_count[match(benthos_fam_synchrony$SiteID, Site_date_counts$SiteID)]
+
+benthos_fam_synchrony$n_taxa<-
+  Site_taxa_counts$taxa_count [match(benthos_fam_synchrony$SiteID, Site_taxa_counts$SiteID)]
+
+benthos_fam_synchrony$Country<-
+    benthos_family_subs$Country [match(benthos_fam_synchrony$SiteID, benthos_family_subs$SiteID)]
+
+```
+
+
+# Explore relationship between comm synchrony and n_taxa, n_time, Lat
+```{r}
+benthos_fam_synchrony %>% 
+  ggplot()+aes(Lat, synchrony, col=Country)+geom_point()+geom_smooth(se=F)
+
+benthos_fam_synchrony %>% 
+  ggplot()+aes(Lat, synchrony, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
+
+
+benthos_fam_synchrony %>% 
+  ggplot()+aes(n_taxa, synchrony, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
+
+benthos_fam_synchrony %>% 
+  ggplot()+aes(n_taxa, Gross, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
+
+
+benthos_fam_synchrony %>% 
+  ggplot()+aes(n_time, synchrony, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
+
+benthos_fam_synchrony %>% 
+  ggplot()+aes(n_time, Gross, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
+
+```
+
+
