@@ -18,7 +18,7 @@ library(codyn)
 ```
 
 ```{r}
-setwd("~/Documents/FEM_work/Pilotto")
+setwd("~/Documents/FEM_work/Pilotto/AquaSYNC_Pilotto")
 ```
 
 
@@ -26,7 +26,7 @@ setwd("~/Documents/FEM_work/Pilotto")
 theme_set(theme_bw())
 ```
 
-
+# Initial import - just to extract the coordinates
 ```{r}
 
 benthos<-
@@ -54,7 +54,7 @@ read_parquet('BenthicMacroinvertebrates_Family_and_higher.parquet')
 
 
 
-# there are issues with SiteID (some are just numbers, not sure it's ok )
+# there are issues with SampleID (some are just numbers, not sure it's ok ).
 ```{r}
 table(benthos_family$SiteID)
 table(benthos_family$SampleID)
@@ -68,7 +68,7 @@ benthos_family$Date_julian<-
   
 ```
 
-
+# some checking
 ```{r}
 tmp<-
   benthos_family %>% 
@@ -77,7 +77,7 @@ tmp<-
 unique(tmp$SiteID)
 
 ```
-
+# the synchrony works on Norway
 ```{r}
 codyn::synchrony(tmp, time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
 ```
@@ -85,19 +85,21 @@ codyn::synchrony(tmp, time.var = 'Date_julian', species.var = 'Taxon.harm', abun
 # get number of unique taxa and unique date for siteID
 #also get richness per site/time combination
 ```{r}
-
+#how many taxa per site
 Site_taxa_counts<-
 benthos_family %>% 
   group_by(SiteID) %>% 
   summarise(taxa_count= n_distinct(Taxon.harm)) %>% 
   arrange(taxa_count)
 
+#how many observations per site (not necessarily years, but just samples)
 Site_date_counts<-
 benthos_family %>% 
   group_by(SiteID) %>% 
   summarise(date_count= n_distinct(Date_julian)) %>% 
   arrange(date_count)
 
+#richness per site / time combination
 Site_taxa_counts_Date<-
 benthos_family %>% 
   group_by(SiteID, Date) %>% 
@@ -110,6 +112,7 @@ Site_taxa_counts_Date$Country<-
   
 ```
 
+# For curisiosity check if trends in richness over time (for country)
 ```{r}
 Site_taxa_counts_Date %>% 
   mutate(Date_julian=as.numeric(Date)) %>% 
