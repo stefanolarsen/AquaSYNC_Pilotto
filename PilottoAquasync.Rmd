@@ -14,7 +14,7 @@ library(arrow)
 library(tidyverse)
 install.packages('codyn')
 library(codyn)
-
+library(data.table)
 ```
 
 ```{r}
@@ -120,6 +120,23 @@ Site_taxa_counts_Date %>%
 ```
 
 
+```{r}
+Site_taxa_counts_Date %>% 
+  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% 
+  mutate(Date_julian=as.numeric(Date)) %>% 
+  ggplot() +aes(Date_julian, taxa_rich, group=SiteID, col=Country)+geom_smooth(method='lm',se=F, size=0.2)
+
+
+
+Site_taxa_counts_Date %>% 
+  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% 
+  mutate(Date_julian=as.numeric(Date)) %>% 
+  ggplot() +aes(Date_julian, taxa_rich, group=SiteID, col=Country)+geom_smooth(method='lm',se=F, size=0.2)+facet_wrap(~Country)
+
+```
+
+
+
 
 # some sites have only one time point
 #example of sites with no temporal observation
@@ -135,14 +152,19 @@ benthos_family %>%
 ```
 
 #subset based on only siteID with >1 time observation
+#Also remove chordata
+*could better subset sites >10 observation*
 ```{r}
 benthos_family_subs<-
 benthos_family %>% 
-  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>1,]$SiteID)
+  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>1,]$SiteID) %>% 
+  filter(phylum !='Chordata')
+
 ```
 
 
 # first synchrony run shows issues with replicated values
+*copy the error message below*
 ```{r}
 codyn::synchrony(benthos_family_subs, time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
 ```
@@ -180,7 +202,7 @@ Error in check_single(df, time.var, species.var, replicate.var) :
 
 
 # check the problems with duplicated data in some Canada sites
-*to idetify duplicates, I exlcude the 'sample_id' column*
+*to idetify duplicates, I exlcude the 'sample_id' column, which differs for duplicated entries*
 #e.g. the BEA01_a site
 
 *some species have duplicated entries, with identical abundance values and dates 2, or 3 times*
@@ -194,7 +216,6 @@ xx<-BEA01_a[duplicated(BEA01_a[,-10]) |duplicated(BEA01_a[,-10], fromLast = T)  
 
 benthos_family_subs %>% 
   filter(SiteID =="BX01_b")
-
 
 ```
 
@@ -212,7 +233,7 @@ benthos_family_subs[,-10] %>%
 
 
 # extract the Loreau and Gross synchrony (community synch), for the cleaned benthos df
-(no duplicates, no sites w/o time series)
+*(no duplicates, no sites w/o time series)*
 ```{r}
 benthos_fam_synchrony<-
 codyn::synchrony(benthos_family_subs[,-10] %>% distinct(),
@@ -268,6 +289,157 @@ benthos_fam_synchrony %>%
 benthos_fam_synchrony %>% 
   ggplot()+aes(n_time, Gross, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
 
+
+benthos_fam_synchrony %>% 
+  ggplot()+aes(Lat, n_taxa, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
+
 ```
 
+
+# Extract year vector
+# create *list with 6y time window*
+```{r}
+yearID<-sort(unique(benthos_family_subs$Year))
+
+
+time.windowlist=list()
+ywindow=5
+for(i in 1:(length(yearID)-ywindow)){
+time.windowlist[[i]]=  (yearID[i:(i+5)])}
+
+```
+
+# how to subset the general data with specific year window
+```{r}
+benthos_family_subs %>% 
+  filter(Year %in% time.windowlist[[1]])
+```
+
+# create time window ID vector (maybe for plotting)
+```{r}
+
+tw_ID<-rep(NA, 33)
+
+for(tw in 1:length(time.windowlist)){
+  tw_ID[tw]<-
+
+  paste(time.windowlist[[tw]][1], time.windowlist[[tw]][6], sep="_")
+}
+```
+
+
+
+# create a SiteID vector (overall)
+```{r}
+SiteID_vector<-unique(benthos_family_subs$SiteID)
+```
+
+# site ID vector for sites with >10 observations
+```{r}
+SiteID_10y<-unique(benthos_family_subs %>% 
+                     filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>%
+                     pull(SiteID)
+)
+```
+
+
+
+
+# Prove Synchrony on given time window, filtering and selecting only sites with >4 years in given window
+```{r}
+
+codyn::synchrony(
+benthos_family_subs[,-10] %>% 
+                   distinct() %>% 
+                  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% 
+                   filter(Year %in% time.windowlist[[26]]) %>% 
+                  group_by(SiteID) %>% 
+                  mutate(nyears= n_distinct(Year)) %>% 
+                  filter(nyears>4) %>% 
+                  group_by(SiteID) %>% 
+                  mutate(count_taxa=n_distinct(Taxon.harm)) %>% 
+                  filter(count_taxa>6)
+,
+
+time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
+
+```
+
+# create list holding the moving window synch calculation
+```{r}
+synch.list<-list()
+```
+
+```{r}
+for (tw in 1: length(time.windowlist)) {
+  synch.list[[tw]]<-
+    
+    codyn::synchrony(
+benthos_family_subs[,-10] %>% 
+                   distinct() %>% # this exclude replicates (canada)
+                  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% # sites with > 10 observations
+                   filter(Year %in% time.windowlist[[tw]]) %>% # select given time window
+                  group_by(SiteID) %>% 
+                  mutate(nyears= n_distinct(Year)) %>% 
+                  filter(nyears>4) %>% # at least 4 years in a given window (of 6)
+                  group_by(SiteID) %>% 
+                  mutate(count_taxa=n_distinct(Taxon.harm)) %>% 
+                  filter(count_taxa>6) # sites with at least 6 taxa
+,
+
+time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
+}
+```
+
+
+```{r}
+synch.list[2]
+```
+
+# combine elements of list *using reduce (like cbind)*, keeping all siteID and adding NA when a given site has no value in a given timewindow. Not all sites are present in each element of the list. Using reduce we progressively cbind the data keeping all sites, and when a given site is absent (for a given time window) it will produce NAs
+```{r}
+synch_mw_test<- # call it as a test for now
+synch.list %>% 
+reduce(full_join, by = "SiteID")
+
+colnames(synch_mw_test)[2:ncol(synch_mw_test)]<-tw_ID
+```
+
+# add Country to the synchrony time window
+```{r}
+synch_mw_test$Country<-
+  benthos_family_subs$Country[match(synch_mw_test$SiteID, benthos_family_subs$SiteID)]
+
+(synch_mw_test$Country)
+```
+
+# Transform the synch mw in long format (for plotting)
+```{r}
+synch_mw_test_long<-
+synch_mw_test %>% 
+  pivot_longer(cols = -c(SiteID, Country), names_to = 'Year_window', values_to = 'Com.Synchrony')
+```
+
+```{r}
+synch_mw_test_long %>% 
+  group_by(SiteID) %>% 
+  mutate(na_count = sum(is.na(Com.Synchrony))) %>% #count the NA (for the sites with now synch in given window)
+  filter(na_count<20) %>% # exclude sites with > n windows missing
+  #mutate(Year_window_n=as.numeric(as.factor(Year_window))) %>% 
+  separate(Year_window, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
+  mutate(Year_Midpoint = (start + end) / 2) %>% 
+  ggplot()+aes(Year_Midpoint, Com.Synchrony, col=Country)+geom_smooth(se=F)
+```
+
+```{r}
+synch_mw_test_long %>% 
+  group_by(SiteID) %>% 
+  mutate(na_count = sum(is.na(Com.Synchrony))) %>% #count the NA (for the sites with now synch in given window)
+  filter(na_count<20) %>% # exclude sites with > n windows missing
+  #mutate(Year_window_n=as.numeric(as.factor(Year_window))) %>% 
+  separate(Year_window, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
+  mutate(Year_Midpoint = (start + end) / 2) %>% 
+  ggplot()+aes(Year_Midpoint, Com.Synchrony, col=Country)+geom_smooth(aes(group=SiteID), se=F, size=0.1)+
+  geom_smooth(aes(group=Country), se=F)
+```
 
