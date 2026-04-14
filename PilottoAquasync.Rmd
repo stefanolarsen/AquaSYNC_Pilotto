@@ -15,6 +15,15 @@ library(tidyverse)
 install.packages('codyn')
 library(codyn)
 library(data.table)
+
+install.packages('geosphere') # for geog distance
+library(geosphere)
+
+install.packages('widyr') # for large sparce matrices / correlation
+library(widyr)
+
+
+library(iCAMP)
 ```
 
 ```{r}
@@ -50,9 +59,13 @@ write.csv(benthos_coords, 'benthos_coords.csv')
 ```{r}
 benthos_family<-
 read_parquet('BenthicMacroinvertebrates_Family_and_higher.parquet')
+
+
+benthos_clean<-
+read_parquet('BenthicMacroinvertebrates_HarmonizedTaxonomy_SiteLevel.parquet')
 ```
 
-
+#
 
 # there are issues with SampleID (some are just numbers, not sure it's ok ).
 ```{r}
@@ -66,17 +79,25 @@ table(benthos_family$SampleID)
 benthos_family$Date_julian<-
   as.numeric(benthos_family$Date)
   
+benthos_clean$Date_julian<-
+  as.numeric(benthos_clean$Date)
+
 ```
 
 # some checking
 ```{r}
 tmp<-
-  benthos_family %>% 
+  benthos_clean %>% 
   filter(Country=='Norway')
 
 unique(tmp$SiteID)
 
+
+xx<-
+tmp %>% 
+  filter(SiteID=='2380')
 ```
+
 # the synchrony works on Norway
 ```{r}
 codyn::synchrony(tmp, time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
@@ -87,26 +108,26 @@ codyn::synchrony(tmp, time.var = 'Date_julian', species.var = 'Taxon.harm', abun
 ```{r}
 #how many taxa per site
 Site_taxa_counts<-
-benthos_family %>% 
+benthos_clean %>% 
   group_by(SiteID) %>% 
   summarise(taxa_count= n_distinct(Taxon.harm)) %>% 
   arrange(taxa_count)
 
 #how many observations per site (not necessarily years, but just samples)
 Site_date_counts<-
-benthos_family %>% 
+benthos_clean %>% 
   group_by(SiteID) %>% 
   summarise(date_count= n_distinct(Date_julian)) %>% 
   arrange(date_count)
 
 #richness per site / time combination
 Site_taxa_counts_Date<-
-benthos_family %>% 
+benthos_clean %>% 
   group_by(SiteID, Date) %>% 
   summarise(taxa_rich= n_distinct(Taxon.harm)) 
 
 Site_taxa_counts_Date$Country<-
-  benthos_family$Country[match(Site_taxa_counts_Date$SiteID, benthos_family$SiteID)]
+  benthos_clean$Country[match(Site_taxa_counts_Date$SiteID, benthos_clean$SiteID)]
 
 
   
@@ -151,13 +172,13 @@ benthos_family %>%
 
 ```
 
-#subset based on only siteID with >1 time observation
+#subset based on only siteID with >3 time observation
 #Also remove chordata
 *could better subset sites >10 observation*
 ```{r}
-benthos_family_subs<-
-benthos_family %>% 
-  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>1,]$SiteID) %>% 
+benthos_clean_subs<-
+benthos_clean %>% 
+  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>3,]$SiteID) %>% 
   filter(phylum !='Chordata')
 
 ```
@@ -166,65 +187,21 @@ benthos_family %>%
 # first synchrony run shows issues with replicated values
 *copy the error message below*
 ```{r}
-codyn::synchrony(benthos_family_subs, time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
+codyn::synchrony(benthos_clean_subs, time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
 ```
 
-Error in check_single(df, time.var, species.var, replicate.var) : 
-  Multiple records for one or more species found at:
- Taxon.harm          SiteID       
- "Ameletidae"        "BEA01_a"    
- "Baetidae"          "BEA01_a"    
- "Capniidae"         "BEA01_a"    
- "Chironomidae"      "BEA01_a"    
- "Chloroperlidae"    "BEA01_a"    
- "Enchytraeidae"     "BEA01_a"    
- "Ephemerellidae"    "BEA01_a"    
- "Glossosomatidae"   "BEA01_a"    
- "Heptageniidae"     "BEA01_a"    
- "Hydropsychidae"    "BEA01_a"    
- "Lepidostomatidae"  "BEA01_a"    
- "Naididae"          "BEA01_a"    
- "Nemouridae"        "BEA01_a"    
- "Pediciidae"        "BEA01_a"    
- "Perlodidae"        "BEA01_a"    
- "Planariidae"       "BEA01_a"    
- "Rhyacophilidae"    "BEA01_a"    
- "Taeniopterygidae"  "BEA01_a"    
- "Ameletidae"        "BEL01_c"    
- "Baetidae"          "BEL01_c"    
- "Capniidae"         "BEL01_c"    
- "Chironomidae"      "BEL01_c"    
- "Chloroperlidae"    "BEL01_c"    
- "Collembola"        "BEL01_c"    
- "Dixidae"           "BEL01_c"    
- "Elmidae"           "BEL01_c"
 
 
 
-# check the problems with duplicated data in some Canada sites
-*to idetify duplicates, I exlcude the 'sample_id' column, which differs for duplicated entries*
-#e.g. the BEA01_a site
 
-*some species have duplicated entries, with identical abundance values and dates 2, or 3 times*
-```{r}
-BEA01_a<-
-benthos_family_subs %>% 
-  filter(SiteID =="BEA01_a")
-
-xx<-BEA01_a[duplicated(BEA01_a[,-10]) |duplicated(BEA01_a[,-10], fromLast = T)  ,]
-
-
-benthos_family_subs %>% 
-  filter(SiteID =="BX01_b")
-
-```
 
 # extract all duplicated data
 ```{r}
-dupli<-benthos_family_subs[duplicated(benthos_family_subs[,-10]) |duplicated(benthos_family_subs[,-10], fromLast = T)  ,]
+dupli<-benthos_clean_subs[duplicated(benthos_clean_subs[,-10]) |duplicated(benthos_clean_subs[,-10], fromLast = T)  ,]
 ```
 
-# remove all duplicates (but keep the first entry)
+# *remove all duplicates (but keep the first entry)*
+*This is left-over from previous run, now there are no duplicated rows*
 ```{r}
 benthos_family_subs[,-10] %>% 
   distinct()
@@ -235,13 +212,13 @@ benthos_family_subs[,-10] %>%
 # extract the Loreau and Gross synchrony (community synch), for the cleaned benthos df
 *(no duplicates, no sites w/o time series)*
 ```{r}
-benthos_fam_synchrony<-
-codyn::synchrony(benthos_family_subs[,-10] %>% distinct(),
+benthos_clean_synchrony<-
+codyn::synchrony(benthos_clean_subs[,-10],
                  
                  time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
 
-benthos_fam_synchrony$Gross<-
-  codyn::synchrony(benthos_family_subs[,-10] %>% distinct(),
+benthos_clean_synchrony$Gross<-
+  codyn::synchrony(benthos_clean_subs[,-10] %>% distinct(),
                  
                  time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID', metric = 'Gross')$synchrony
 
@@ -249,49 +226,55 @@ benthos_fam_synchrony$Gross<-
 
 # add some covariates to sites synchrony
 ```{r}
-benthos_fam_synchrony$Lon<-
-  benthos_family_subs$Lon[match(benthos_fam_synchrony$SiteID, benthos_family_subs$SiteID)]
+benthos_clean_synchrony$Lon<-
+  benthos_clean_subs$Lon[match(benthos_clean_synchrony$SiteID, benthos_clean_subs$SiteID)]
 
-benthos_fam_synchrony$Lat<-
-  benthos_family_subs$Lat[match(benthos_fam_synchrony$SiteID, benthos_family_subs$SiteID)]
+benthos_clean_synchrony$Lat<-
+  benthos_clean_subs$Lat[match(benthos_clean_synchrony$SiteID, benthos_clean_subs$SiteID)]
 
-benthos_fam_synchrony$n_time<-
-  Site_date_counts$date_count[match(benthos_fam_synchrony$SiteID, Site_date_counts$SiteID)]
+benthos_clean_synchrony$n_time<-
+  Site_date_counts$date_count[match(benthos_clean_synchrony$SiteID, Site_date_counts$SiteID)]
 
-benthos_fam_synchrony$n_taxa<-
-  Site_taxa_counts$taxa_count [match(benthos_fam_synchrony$SiteID, Site_taxa_counts$SiteID)]
+benthos_clean_synchrony$n_taxa<-
+  Site_taxa_counts$taxa_count [match(benthos_clean_synchrony$SiteID, Site_taxa_counts$SiteID)]
 
-benthos_fam_synchrony$Country<-
-    benthos_family_subs$Country [match(benthos_fam_synchrony$SiteID, benthos_family_subs$SiteID)]
+benthos_clean_synchrony$Country<-
+    benthos_clean_subs$Country [match(benthos_clean_synchrony$SiteID, benthos_clean_subs$SiteID)]
+
+benthos_clean_synchrony$LakeRiver<-
+     benthos_clean_subs$Lake.river[match(benthos_clean_synchrony$SiteID, benthos_clean_subs$SiteID)]
 
 ```
 
 
 # Explore relationship between comm synchrony and n_taxa, n_time, Lat
 ```{r}
-benthos_fam_synchrony %>% 
-  ggplot()+aes(Lat, synchrony, col=Country)+geom_point()+geom_smooth(se=F)
 
-benthos_fam_synchrony %>% 
+
+benthos_clean_synchrony %>% 
   ggplot()+aes(Lat, synchrony, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
 
 
-benthos_fam_synchrony %>% 
+benthos_clean_synchrony %>% 
   ggplot()+aes(n_taxa, synchrony, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
 
-benthos_fam_synchrony %>% 
+benthos_clean_synchrony %>% 
   ggplot()+aes(n_taxa, Gross, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
 
 
-benthos_fam_synchrony %>% 
+benthos_clean_synchrony %>% 
   ggplot()+aes(n_time, synchrony, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
 
-benthos_fam_synchrony %>% 
+benthos_clean_synchrony %>% 
   ggplot()+aes(n_time, Gross, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
 
 
-benthos_fam_synchrony %>% 
+benthos_clean_synchrony %>% 
   ggplot()+aes(Lat, n_taxa, col=Country)+geom_point()+geom_smooth(se=F, method='lm')
+
+
+benthos_clean_synchrony %>% 
+  ggplot()+aes(LakeRiver, synchrony)+geom_violin()+geom_boxplot()
 
 ```
 
@@ -299,7 +282,7 @@ benthos_fam_synchrony %>%
 # Extract year vector
 # create *list with 6y time window*
 ```{r}
-yearID<-sort(unique(benthos_family_subs$Year))
+yearID<-sort(unique(benthos_clean_subs$Year))
 
 
 time.windowlist=list()
@@ -309,9 +292,19 @@ time.windowlist[[i]]=  (yearID[i:(i+5)])}
 
 ```
 
+# Also crerate time window of 10 year
+```{r}
+time.windowlist_10=list()
+ywindow=10
+for(i in 1:(length(yearID)-ywindow)){
+time.windowlist_10[[i]]=  (yearID[i:(i+ywindow)])}
+```
+
+
+
 # how to subset the general data with specific year window
 ```{r}
-benthos_family_subs %>% 
+benthos_clean_subs %>% 
   filter(Year %in% time.windowlist[[1]])
 ```
 
@@ -327,16 +320,27 @@ for(tw in 1:length(time.windowlist)){
 }
 ```
 
+# window 10y ID
+```{r}
+tw_ID_10<-rep(NA, 28)
+
+for(tw in 1:length(time.windowlist_10)){
+  tw_ID_10[tw]<-
+
+  paste(time.windowlist_10[[tw]][1], time.windowlist_10[[tw]][10], sep="_")
+}
+```
+
 
 
 # create a SiteID vector (overall)
 ```{r}
-SiteID_vector<-unique(benthos_family_subs$SiteID)
+SiteID_vector<-unique(benthos_clean_subs$SiteID)
 ```
 
 # site ID vector for sites with >10 observations
 ```{r}
-SiteID_10y<-unique(benthos_family_subs %>% 
+SiteID_10y<-unique(benthos_clean_subs %>% 
                      filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>%
                      pull(SiteID)
 )
@@ -345,46 +349,98 @@ SiteID_10y<-unique(benthos_family_subs %>%
 
 
 
-# Prove Synchrony on given time window, filtering and selecting only sites with >4 years in given window
+# Prove Synchrony on given time window, filtering and selecting only sites with >4 years in given window;
+# Exclude site / year with only one taxa
+#include only sites with >4 years data in a given window
+# include only sites with >6 taxa in given window
 ```{r}
 
 codyn::synchrony(
-benthos_family_subs[,-10] %>% 
-                   distinct() %>% 
+benthos_clean_subs %>% 
+                   #distinct() %>% 
                   filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% 
-                   filter(Year %in% time.windowlist[[26]]) %>% 
+                   filter(Year %in% time.windowlist[[8]]) %>%  # select time window
+                   group_by(SiteID, Year) %>% 
+                  mutate(taxa_site_year=n_distinct(Taxon.harm)) %>% # identify sites that for a given year only have 1 taxa
+                  filter(taxa_site_year>1) %>% # exclude the site - year with only 1 taxa
                   group_by(SiteID) %>% 
-                  mutate(nyears= n_distinct(Year)) %>% 
-                  filter(nyears>4) %>% 
+                  mutate(nyears= n_distinct(Year)) %>%  # number of year with data for each site
+                  filter(nyears>=4) %>% # include sites with >= 4 years data in a given window (of 6y)
                   group_by(SiteID) %>% 
                   mutate(count_taxa=n_distinct(Taxon.harm)) %>% 
-                  filter(count_taxa>6)
+                  filter(count_taxa>6) %>% # only include sites with > 6 taxa in a given window
+                 group_by(SiteID, Year) %>% 
+                  mutate(taxa_site_year=n_distinct(Taxon.harm)) %>% 
+                  filter(taxa_site_year>1)
+
 ,
 
 time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
 
 ```
 
+# *Tests to understand issues with sites with unique species, etc*
+```{r}
+xx<-
+benthos_clean_subs %>% 
+                   #distinct() %>% 
+                  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% 
+                   filter(Year %in% time.windowlist[[8]]) %>% 
+                  select(SiteID, Taxon.harm, Value, Year, Date, Date_julian) %>% 
+                  group_by(SiteID, Year) %>% 
+                  mutate(taxa_site_year=n_distinct(Taxon.harm)) %>% 
+                  filter(taxa_site_year>1) %>% 
+                  group_by(SiteID) %>% 
+                  mutate(nyears= n_distinct(Year)) %>% 
+                  filter(nyears>=4) %>% 
+                  group_by(SiteID) %>% 
+                  mutate(count_taxa=n_distinct(Taxon.harm)) %>% 
+                  filter(count_taxa>6) 
+               
+              
+codyn::synchrony(xx,
+time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID') 
+
+xx %>% 
+  group_by(SiteID, Year) %>% 
+  summarise(spp_year=n_distinct(Taxon.harm)) %>% arrange(spp_year)
+
+
+xx %>% 
+  filter(SiteID =='SE633738-142203|profundal')
+
+
+```
+
+
+
+
 # create list holding the moving window synch calculation
 ```{r}
 synch.list<-list()
 ```
 
+# *Moving window list of comm synchrony*
 ```{r}
 for (tw in 1: length(time.windowlist)) {
   synch.list[[tw]]<-
     
     codyn::synchrony(
-benthos_family_subs[,-10] %>% 
-                   distinct() %>% # this exclude replicates (canada)
+benthos_clean_subs %>% 
+                   #distinct() %>% # this exclude replicates (canada)
+                  #filter(Sampled.habitat != 'Profundal') %>% 
                   filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% # sites with > 10 observations
                    filter(Year %in% time.windowlist[[tw]]) %>% # select given time window
+                  group_by(SiteID, Year) %>% 
+                  mutate(taxa_site_year=n_distinct(Taxon.harm)) %>% 
+                  filter(taxa_site_year>1) %>%                 
                   group_by(SiteID) %>% 
                   mutate(nyears= n_distinct(Year)) %>% 
-                  filter(nyears>4) %>% # at least 4 years in a given window (of 6)
+                  filter(nyears>=4) %>% # at least 4 years in a given window (of 6)
                   group_by(SiteID) %>% 
                   mutate(count_taxa=n_distinct(Taxon.harm)) %>% 
                   filter(count_taxa>6) # sites with at least 6 taxa
+                    
 ,
 
 time.var = 'Date_julian', species.var = 'Taxon.harm', abundance.var = 'Value', replicate.var = 'SiteID')
@@ -408,10 +464,27 @@ colnames(synch_mw_test)[2:ncol(synch_mw_test)]<-tw_ID
 # add Country to the synchrony time window
 ```{r}
 synch_mw_test$Country<-
-  benthos_family_subs$Country[match(synch_mw_test$SiteID, benthos_family_subs$SiteID)]
+  benthos_clean_subs$Country[match(synch_mw_test$SiteID, benthos_clean_subs$SiteID)]
 
 (synch_mw_test$Country)
 ```
+
+## Iceland with very large densities
+```{r}
+benthos_clean_subs %>% 
+  filter(SiteID =='Elliðaár')
+
+benthos_clean_subs %>% 
+  filter(Country=='Iceland')
+
+benthos_clean_subs %>% 
+  filter(ValueType=='Density') %>% 
+  ggplot()+aes(x=Country, y = Value)+geom_boxplot()
+
+
+
+```
+
 
 # Transform the synch mw in long format (for plotting)
 ```{r}
@@ -420,6 +493,7 @@ synch_mw_test %>%
   pivot_longer(cols = -c(SiteID, Country), names_to = 'Year_window', values_to = 'Com.Synchrony')
 ```
 
+# Plot moving window community synchrony (all country)
 ```{r}
 synch_mw_test_long %>% 
   group_by(SiteID) %>% 
@@ -429,10 +503,24 @@ synch_mw_test_long %>%
   separate(Year_window, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
   mutate(Year_Midpoint = (start + end) / 2) %>% 
   ggplot()+aes(Year_Midpoint, Com.Synchrony, col=Country)+geom_smooth(se=F)
+
+# Iceland is weird
+synch_mw_test_long %>% 
+  filter(Country!='Iceland') %>% 
+  group_by(SiteID) %>% 
+  mutate(na_count = sum(is.na(Com.Synchrony))) %>% #count the NA (for the sites with now synch in given window)
+  filter(na_count<20) %>% # exclude sites with > n windows missing
+  #mutate(Year_window_n=as.numeric(as.factor(Year_window))) %>% 
+  separate(Year_window, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
+  mutate(Year_Midpoint = (start + end) / 2) %>% 
+  ggplot()+aes(Year_Midpoint, Com.Synchrony, col=Country)+geom_smooth(se=F)
+
+
 ```
 
 ```{r}
 synch_mw_test_long %>% 
+  filter(Country!='Iceland') %>% 
   group_by(SiteID) %>% 
   mutate(na_count = sum(is.na(Com.Synchrony))) %>% #count the NA (for the sites with now synch in given window)
   filter(na_count<20) %>% # exclude sites with > n windows missing
@@ -440,6 +528,1038 @@ synch_mw_test_long %>%
   separate(Year_window, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
   mutate(Year_Midpoint = (start + end) / 2) %>% 
   ggplot()+aes(Year_Midpoint, Com.Synchrony, col=Country)+geom_smooth(aes(group=SiteID), se=F, size=0.1)+
-  geom_smooth(aes(group=Country), se=F)
+  geom_smooth(aes(group=Country), se=F)+facet_wrap(~Country)
 ```
+
+```{r}
+table(benthos_family_subs$Lake.river)
+```
+
+
+```{r}
+benthos_fam_synchrony 
+```
+
+
+# Plot the number of sites within each moving window
+```{r}
+synch_mw_test_long %>% 
+  drop_na() %>% 
+  group_by(Year_window, Country) %>% 
+  summarise(n_sites=n_distinct(SiteID)) %>% 
+  ggplot()+aes(Year_window, n_sites)+geom_point()+facet_wrap(~Country)+
+  theme(axis.text.x = element_text(angle = 90, hjust=-1, size=8))
+                                                                                                        
+```
+
+# mapping the coords
+```{r}
+benthos_fam_synchrony %>% 
+  filter(Country %in% c('Sweden', 'Norway', 'Finland')) %>% 
+  ggplot()+aes(Lon, Lat, col=synchrony)+geom_point()+scale_color_gradient(low='blue', high='red')
+```
+
+
+##########################
+## *Moving window Stability*
+# create list holding the moving window stability calculation
+```{r}
+stability.list<-list()
+```
+
+```{r}
+for (tw in 1: length(time.windowlist)) {
+  stability.list[[tw]]<-
+    
+    codyn::community_stability(
+benthos_clean_subs %>% 
+                   #distinct() %>% # this exclude replicates (canada)
+                  #filter(Sampled.habitat != 'Profundal') %>% 
+                  filter(SiteID %in% Site_date_counts[Site_date_counts$date_count>10,]$SiteID) %>% # sites with > 10 observations
+                   filter(Year %in% time.windowlist[[tw]]) %>% # select given time window
+                  group_by(SiteID, Year) %>% 
+                  mutate(taxa_site_year=n_distinct(Taxon.harm)) %>% 
+                  filter(taxa_site_year>1) %>%                 
+                  group_by(SiteID) %>% 
+                  mutate(nyears= n_distinct(Year)) %>% 
+                  filter(nyears>=4) %>% # at least 4 years in a given window (of 6)
+                  group_by(SiteID) %>% 
+                  mutate(count_taxa=n_distinct(Taxon.harm)) %>% 
+                  filter(count_taxa>6) # sites with at least 6 taxa
+,
+
+time.var = 'Date_julian', abundance.var = 'Value', replicate.var = 'SiteID')
+}
+```
+
+```{r}
+stability.list[[1]]
+```
+
+# Combine (reduce) the stability moving window
+```{r}
+stability_mw_test<- # call it as a test for now
+stability.list %>% 
+reduce(full_join, by = "SiteID")
+
+colnames(stability_mw_test)[2:ncol(stability_mw_test)]<-tw_ID
+```
+# add the Country info on the stability moving window
+```{r}
+stability_mw_test$Country<-
+  benthos_clean_subs$Country[match(stability_mw_test$SiteID, benthos_clean_subs$SiteID)]
+
+
+
+```
+
+
+# Transform the stability mw in long format (for plotting)
+```{r}
+stability_mw_test_long<-
+stability_mw_test %>% 
+  pivot_longer(cols = -c(SiteID, Country), names_to = 'Year_window', values_to = 'Com.Stability')
+```
+
+# Plot of moving window stability per country
+```{r}
+stability_mw_test_long %>% 
+  group_by(SiteID) %>% 
+  mutate(na_count = sum(is.na(Com.Stability))) %>% #count the NA (for the sites with now synch in given window)
+  filter(na_count<20) %>% # exclude sites with > n windows missing
+  #mutate(Year_window_n=as.numeric(as.factor(Year_window))) %>% 
+  separate(Year_window, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
+  mutate(Year_Midpoint = (start + end) / 2) %>% 
+  ggplot()+aes(Year_Midpoint, Com.Stability, col=Country)+geom_smooth(aes(group=SiteID), se=F, size=0.1)+
+  geom_smooth(aes(group=Country), se=F)+facet_wrap(~Country)
+```
+
+```{r}
+stability_mw_test_long %>% 
+  group_by(SiteID) %>% 
+  mutate(na_count = sum(is.na(Com.Stability))) %>% #count the NA (for the sites with now synch in given window)
+  filter(na_count<20) %>% # exclude sites with > n windows missing
+  #mutate(Year_window_n=as.numeric(as.factor(Year_window))) %>% 
+  separate(Year_window, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
+  mutate(Year_Midpoint = (start + end) / 2) %>% 
+  ggplot()+aes(Year_Midpoint, Com.Stability, col=Country)+geom_smooth(aes(group=SiteID), se=F, size=0.1)+
+  geom_smooth(aes(group=Country), se=F)+facet_wrap(~Country, scale='free_y')
+```
+
+
+
+
+# *How many samples per year in each site*
+*most sites visited only once per year*
+```{r}
+
+Site_samples_year<-
+benthos_clean_subs %>% 
+  group_by(SiteID, Year) %>% 
+  summarise (n_distinct(Date_julian))
+
+#most samples in Fall, some in Spring
+benthos_clean_subs %>% 
+  group_by(SiteID, Year) %>% 
+  summarise (mean_month=mean(Month)) %>% 
+  pull(mean_month) %>% 
+  hist()
+
+```
+
+# Check distribution of species across sites
+*needed to select taxa for spatial synchrony*
+```{r}
+Taxon_distribution<-
+benthos_clean_subs %>% 
+  group_by(Taxon.harm) %>% 
+  summarise(Distribution=n_distinct(SiteID))
+```
+
+
+###########################################
+##### Spatial Synchrony section ########### *perhaps remove profundal sites*
+
+#################################
+# *Get grouped table with info for each taxa*
+```{r}
+benthos_taxa_grp<-
+benthos_clean_subs %>%
+  group_by(Taxon.harm) %>% 
+  nest() %>% 
+  ungroup()
+  
+
+```
+
+#add the distribution across sites for each taxa
+```{r}
+benthos_taxa_grp$distribution<-
+  Taxon_distribution$Distribution[match(benthos_taxa_grp$Taxon.harm, Taxon_distribution$Taxon.harm)]
+```
+
+# have a look at the species 1 in the grouped data
+*this df can be used to eventually loop over time windows, for spatial synch moving window*
+```{r}
+benthos_taxa_grp$data[40]
+```
+
+
+# add a list column, where I create a df with SiteID x Year for each species (if many years, then mean)
+*this creates a Site X Year matrix for each species*
+```{r}
+benthos_taxa_grp<-
+benthos_taxa_grp %>% 
+  mutate( taxa_wide = map(data, ~ .x %>% # convert to wide format (site x year) Also, here is where we could select time windows
+                            select(SiteID, Year, Value) %>% 
+                            pivot_wider(names_from = Year,
+                                        names_sort = T, # sort the year column
+                                        values_from = Value, values_fn = mean))
+            )
+```
+
+# have a look at the wide format for a taxa
+```{r}
+benthos_taxa_grp$taxa_wide[[4]] 
+ 
+```
+
+## *Subset the taxa with >20 sites distribution (overall)*
+```{r}
+benthos_taxa_grp_20sites<- 
+  benthos_taxa_grp %>% 
+  filter(distribution >20)
+```
+
+## actual spatial cor analyses 
+# get the *spatial corr (spearman) between each site* (regardless where they are) for all spp in >20 sites overall
+
+```{r}
+benthos_taxa_grp_20sites<-
+benthos_taxa_grp_20sites %>% 
+  mutate(
+   spatial_cor = map(taxa_wide, function(df) {
+      # 1. Move SiteID to row names so it doesn't get treated as numeric data
+      # 2. Transpose so Sites = Columns, Years = Rows
+      mat <- df %>%
+        column_to_rownames("SiteID") %>%
+        t()
+      
+      # 3. Calculate Spearman Correlation
+      # use = "pairwise.complete.obs" handles NAs if sites have different year ranges
+      cor(mat, method = "spearman", use = "pairwise.complete.obs")
+    })
+  )
+```
+
+
+
+# some species with very sparce matrices
+```{r}
+benthos_taxa_grp_20sites$taxa_wide[2]
+```
+
+# check how many obs in each pairwise
+```{r}
+
+# the wide spp data
+xx<-
+   benthos_taxa_grp_20sites$taxa_wide[[2]]%>%
+        column_to_rownames("SiteID") %>%
+        t()
+
+# masking presences and NAs
+tmp1<-!is.na(xx)
+storage.mode(tmp1)<-'numeric'
+
+#matrix of pairwise obs
+n_matrix <- t(tmp1) %*% tmp1
+
+# convert to 3-col df, (to add to the pairwise synchrony)
+dist.3col(as.dist(n_matrix))
+
+
+
+```
+
+
+
+
+# Convert species-specific spatial cor matrix into a 3-column df. Add it as additional column in the group df
+```{r}
+benthos_taxa_grp_20sites <-
+benthos_taxa_grp_20sites %>% 
+  mutate(Dist3Cols = map(spatial_cor, function(mat){
+    iCAMP::dist.3col(mat) } )
+  )
+```
+
+# add the Taxon ID in front of the 3-column spatial correlation
+```{r}
+
+benthos_taxa_grp_20sites<-
+  
+benthos_taxa_grp_20sites %>% 
+  mutate(Dist3Cols=map2(Dist3Cols, Taxon.harm, ~.x %>% 
+                          mutate(TaxaID = .y) %>% 
+                          select(TaxaID, everything())
+  )
+  )
+```
+
+# Check that taxa names are now included in
+```{r}
+benthos_taxa_grp_20sites$Dist3Cols[[2]]
+```
+
+# function to *extrct the n observations in each pairwise sites for each spp*
+```{r}
+
+n_obs_fun<-function(mat){
+  mat=
+    mat %>% 
+    column_to_rownames("SiteID") %>%
+        t()
+  mat_01= !is.na(mat)
+  storage.mode(mat_01)<-'numeric'
+  
+  n_matrix=t(mat_01) %*% mat_01
+  
+  pair_obs=iCAMP::dist.3col(n_matrix)
+  
+  return(pair_obs)
+}
+
+
+# test the function
+n_obs_fun(benthos_taxa_grp_20sites$taxa_wide[[2]])
+
+
+
+```
+
+
+
+
+# calculate the number of common (shared) observation between sites, and add this to the grouped df
+*also add the name of taxa in the obs pair data*
+```{r}
+benthos_taxa_grp_20sites<-
+  
+  benthos_taxa_grp_20sites %>% 
+  mutate(obs_pairs = map(taxa_wide, n_obs_fun)) %>% 
+  
+mutate(obs_pairs=map2(obs_pairs, Taxon.harm, ~.x %>% 
+                          mutate(TaxaID = .y) %>% 
+                          select(TaxaID, everything())
+  )
+  )
+
+
+
+```
+
+#veryfy the obs.pair data
+```{r}
+benthos_taxa_grp_20sites$obs_pairs[[1]]
+```
+
+
+```{r}
+benthos_taxa_grp_20sites
+```
+
+
+
+# Create comprehensive 3-col spatial synch across all sites amd species (present in >20 sites)
+```{r}
+Spatial_synch_all<-
+benthos_taxa_grp_20sites %>% 
+  select(Dist3Cols) %>% 
+  unnest()
+```
+
+# add names of County for both sites  on the 3-col spatial synch df
+```{r}
+Spatial_synch_all$Country1<-
+  benthos_clean_subs$Country[match(Spatial_synch_all$name1, benthos_clean_subs$SiteID)]
+
+Spatial_synch_all$Country2<-
+  benthos_clean_subs$Country[match(Spatial_synch_all$name2, benthos_clean_subs$SiteID)]
+
+
+names(Spatial_synch_all)[4]<-'Spatial_synch'
+
+Spatial_synch_all$site_pair<-
+  paste(Spatial_synch_all$name1, Spatial_synch_all$name2, sep='_')
+
+#add the combination of site_pair and taxa
+Spatial_synch_all$site_pair_TaxaID<-
+  paste(Spatial_synch_all$site_pair, Spatial_synch_all$TaxaID, sep="_")
+
+```
+
+# extract the number of observation pairs (site pairs) for each species
+#add site pair and site_pair_taxa to the observation pair
+```{r}
+Spatial_synch_obs.pairs<-
+benthos_taxa_grp_20sites %>% 
+  select(obs_pairs) %>% 
+  unnest()
+
+# add actual pairs of site ID
+Spatial_synch_obs.pairs$site.pairs<-
+  paste(Spatial_synch_obs.pairs$name1, Spatial_synch_obs.pairs$name2, sep="_")
+
+names(Spatial_synch_obs.pairs)[4]<-'obs.pairs'
+
+Spatial_synch_obs.pairs$site.pairs_TaxaID<-
+  paste(Spatial_synch_obs.pairs$site.pairs, Spatial_synch_obs.pairs$TaxaID, sep="_")
+
+```
+
+
+# add the number of observation pairs for each species
+
+*Now add the obs.pair by matchin site_pair_TaxaID (the complete pairwise info)*
+```{r}
+
+
+Spatial_synch_all$obs.pairs<-
+  Spatial_synch_obs.pairs$obs.pairs[match(Spatial_synch_all$site_pair_TaxaID, Spatial_synch_obs.pairs$site.pairs_TaxaID )]
+  
+  
+```
+
+
+# extract coordinates for *Atlantic sites*
+```{r}
+SiteID_coords_Atl<-
+  benthos_clean_synchrony %>% 
+  filter(Country %in% c('Sweden', 'Finland', 'Norway')) %>% 
+  select(SiteID, Lon, Lat)
+  as.matrix()
+  
+
+SiteID_coords_Atl
+  
+```
+
+#Distance of the Atlantic sites
+```{r}
+SiteID_geo_dist_Alt<-
+  distm(SiteID_coords_Atl[,-1], fun = distGeo) 
+  
+  #add siteID into the dist matrix
+rownames(SiteID_geo_dist_Alt)<-SiteID_coords_Atl$SiteID
+colnames(SiteID_geo_dist_Alt)<-SiteID_coords_Atl$SiteID
+
+# convert to Km dist
+SiteID_geo_dist_Alt<-
+SiteID_geo_dist_Alt/1000
+
+
+```
+
+#Convert geodist *Atlantic* into 3col df
+```{r}
+Geodist_Atl_3col<-
+dist.3col(SiteID_geo_dist_Alt)
+
+#add site pair information
+Geodist_Atl_3col$Site_pair<-
+  paste(Geodist_Atl_3col$name1, Geodist_Atl_3col$name2, sep="_")
+```
+
+
+#Add the goedist to the spatial synch df
+*this adds geodist only for the Atlantic sites*
+```{r}
+Spatial_synch_all$GeoDist<-
+  Geodist_Atl_3col$dis[match(Spatial_synch_all$site_pair, Geodist_Atl_3col$Site_pair)]
+```
+
+
+
+# Plot spatial decay of synchrony
+#Only Atlantic sites (other have no Geodist)
+# Also, seelct only species with >9 observation pairs
+```{r}
+Spatial_synch_all %>% 
+  drop_na() %>% 
+  filter(obs.pairs>9) %>% 
+  filter(GeoDist <500 & GeoDist>0) %>% 
+  ggplot()+aes(sqrt(GeoDist), Spatial_synch)+geom_smooth(col='darkred', size=2)
+
+
+Spatial_synch_all %>% 
+  drop_na() %>% 
+  filter(obs.pairs>9) %>% 
+  ggplot()+aes(sqrt(GeoDist), Spatial_synch)+geom_smooth(aes(group=TaxaID), size=0.2, se=F, col='grey50')+
+  geom_smooth(se=T, col='darkred', size=2)+xlab('Geodist sqrt(km)') + ggtitle('Atlantic sites')
+
+
+Spatial_synch_all %>% 
+  drop_na() %>% 
+  filter(obs.pairs>9) %>% 
+  filter(GeoDist <200) %>% 
+  filter(GeoDist>0) %>% 
+  ggplot()+aes(sqrt(GeoDist), Spatial_synch)+geom_smooth(aes(group=TaxaID), size=0.2, se=F, col='grey50')+
+  geom_smooth(se=T, col='darkred', size=2)+xlab('Geodist sqrt(km)') + ggtitle('Atlantic sites')
+
+
+Spatial_synch_all %>% 
+  drop_na() %>% 
+  filter(TaxaID != 'Oligochaeta') %>% 
+  filter(obs.pairs>9) %>% 
+  filter(GeoDist <200) %>% 
+  filter(GeoDist>0) %>% 
+  ggplot()+aes(sqrt(GeoDist), Spatial_synch)+geom_smooth(aes(group=TaxaID), size=0.2, se=F, col='grey50')+
+  geom_smooth(se=T, col='darkred', size=2)+xlab('Geodist sqrt(km)') + ggtitle('Atlantic sites')
+
+
+
+
+
+```
+
+
+################################
+# *Total abundance time series for sites*
+```{r}
+benthos_clean_tot_abund<-
+benthos_clean_subs %>% 
+  group_by(SiteID,Year, Lat, Lon, Country, Sampled.habitat, Unit) %>% 
+  summarise (CommAbund=sum(Value)) %>% ungroup()
+```
+
+# Calculate *total abundance spatial synchrony*
+```{r}
+Spatial_synch_tot_abund<-
+benthos_clean_tot_abund %>% 
+    select(SiteID, Year, CommAbund) %>% 
+    pivot_wider(names_from = Year,
+    names_sort = T, # sort the year column
+    values_from = CommAbund) %>% 
+   #select(-c(Lat, Lon, Country, Sampled.habitat)) %>% 
+  
+  column_to_rownames("SiteID") %>%
+        t() %>% 
+      
+      # 3. Calculate Spearman Correlation
+      # use = "pairwise.complete.obs" handles NAs if sites have different year ranges
+      cor(., method = "spearman", use = "pairwise.complete.obs") %>% 
+  iCAMP::dist.3col()
+
+
+## add site pair info
+Spatial_synch_tot_abund$site_pair<-
+  paste(Spatial_synch_tot_abund$name1, Spatial_synch_tot_abund$name2, sep="_")
+```
+            
+#get the number of pairwise observations for the tot abundance synchrony
+```{r}
+
+Spatial_synch_tot_abund.obs.pairs<-
+benthos_clean_tot_abund %>% 
+    select(SiteID, Year, CommAbund) %>% 
+    pivot_wider(names_from = Year,
+    names_sort = T, # sort the year column
+    values_from = CommAbund) %>% ungroup() %>% 
+   select(-c(Lat, Lon, Country, Sampled.habitat)) %>% 
+  n_obs_fun(). # use the previously created function
+
+#add site pair info
+Spatial_synch_tot_abund.obs.pairs$site_pairs<-
+  paste(Spatial_synch_tot_abund.obs.pairs$name1,Spatial_synch_tot_abund.obs.pairs$name2, sep='_')
+
+names(Spatial_synch_tot_abund.obs.pairs)[3]<-'obs.pairs'
+
+```
+
+# add the n.obs in the tot abund spatial synch df
+NOTE: as oppose to the spatial synch of each spp, here the match is based only on site_pair, not site_pair_taxa
+```{r}
+Spatial_synch_tot_abund$obs.pairs<-
+  Spatial_synch_tot_abund.obs.pairs$obs.pairs[match(Spatial_synch_tot_abund$site_pair, Spatial_synch_tot_abund.obs.pairs$site_pairs)]
+```
+
+
+## add geodistance to the total abundance spatial synch
+```{r}
+Spatial_synch_tot_abund$Geodist<-
+  Spatial_synch_all$GeoDist[match(Spatial_synch_tot_abund$site_pair, Spatial_synch_all$site_pair)]
+```
+
+```{r}
+Spatial_synch_tot_abund %>% 
+  drop_na() %>% # remove NAs, which means exlcude non Atlantic sites
+  filter(obs.pairs >9) %>% 
+  filter(Geodist<500) %>% 
+  ggplot()+aes(sqrt(Geodist), dis)+geom_smooth()+ylab('Comm. abundance synchrony')
+```
+
+```{r}
+Spatial_synch_tot_abund 
+```
+
+
+
+#### #################################
+## *Spatial synchrony for moving window*
+####################################
+
+#Pseudocode function
+
+Take data
+group data by taxon
+add taxa distribution (global)
+filter for the given time window [tw] - this is the loop 
+mutate to taxa_wide
+calculate spatial sync (as cor)
+convert matrix to synch 3cols + add site_pair ID
+run the obs.pair function + add site_pair ID
+Add site pair numbers on the synch 3cols (match using both site_pair and taxaID)
+return synch 3 cols
+
+
+#######################
+
+# create a list to hold the time window of tatal abundance spatial synch
+```{r}
+abund_spatial_synch_list<-list()
+```
+
+# the loop to get time window abundance spat synch
+```{r}
+
+for(tw in 1:length(time.windowlist)){
+
+abund_spatial_synch_list[[tw]]=
+  
+benthos_clean_tot_abund %>% 
+  filter(Sampled.habitat != 'Profundal') %>% # remove profundal
+    select(SiteID, Year, CommAbund) %>% 
+  filter(Year %in% time.windowlist[[tw]]) %>% 
+    pivot_wider(names_from = Year,
+    names_sort = T, # sort the year column
+    values_from = CommAbund) %>%
+  
+  column_to_rownames("SiteID") %>%
+        t() %>% 
+      
+      # 3. Calculate Spearman Correlation
+      # use = "pairwise.complete.obs" handles NAs if sites have different year ranges
+      cor(., method = "spearman", use = "pairwise.complete.obs") %>% 
+  iCAMP::dist.3col() %>% 
+  mutate(year_window=tw_ID[tw]) %>% 
+  rename(Synchrony=dis)
+}
+
+
+```
+
+```{r}
+abund_spatial_synch_list[[1]]
+```
+
+
+# rbind the *abund spatial synchrony time window*, into a long format
+```{r}
+abund_spatial_synch_tw<-
+rbindlist(abund_spatial_synch_list)
+
+#add the site pair infor
+abund_spatial_synch_tw$site_pair<-
+  paste(abund_spatial_synch_tw$name1, abund_spatial_synch_tw$name2, sep="_")
+```
+
+
+
+# get the observation pairs in the time window for abundance synchrony
+
+```{r}
+abund.synch_tw_nobspair_list<-list()
+```
+
+# the loop to get the number of obs pairs in the abund synch time window
+```{r}
+
+for(tw in 1 : length(time.windowlist)) {
+  abund.synch_tw_nobspair_list[[tw]]=
+benthos_clean_tot_abund %>% filter(Sampled.habitat != 'Profundal') %>% 
+    select(SiteID, Year, CommAbund) %>% 
+  filter(Year %in% time.windowlist[[tw]]) %>% 
+    pivot_wider(names_from = Year,
+    names_sort = T, # sort the year column
+    values_from = CommAbund) %>% 
+  n_obs_fun() %>% 
+    rename(n.obs.pairs=dis)
+}
+  
+
+abund.synch_tw_nobspair_list[[1]]
+
+```
+
+# the long df of number obs pair for the timewindow abund synnchrony
+```{r}
+abund_spatial_synch_tw_nobspair<-
+  rbindlist(abund.synch_tw_nobspair_list)
+
+abund_spatial_synch_tw_nobspair$site_pair<-
+  paste(abund_spatial_synch_tw_nobspair$name1, abund_spatial_synch_tw_nobspair$name2, sep="_")
+```
+
+#add the observation pair number to the abund synchrony time window df
+*Note the max obs.pair == time window of 6 years* That is the number of years contributing to the synch estimates
+```{r}
+abund_spatial_synch_tw$n.obs.pair<-
+  abund_spatial_synch_tw_nobspair$n.obs.pairs[match(abund_spatial_synch_tw$site_pair, abund_spatial_synch_tw_nobspair$site_pair)]
+```
+# add geodist to the sptial synch tw
+```{r}
+abund_spatial_synch_tw$Geodist<-
+  Spatial_synch_tot_abund$Geodist[match(abund_spatial_synch_tw$site_pair, Spatial_synch_tot_abund$site_pair)]
+```
+
+```{r}
+abund_spatial_synch_tw<-
+abund_spatial_synch_tw %>% 
+  mutate(year_window.f=as.factor(year_window)) 
+```
+
+```{r}
+skipwindow<-levels(abund_spatial_synch_tw$year_window.f)[seq(1, 33, by = 2)]
+```
+
+# *Plot of 6years window spatial synchrony patterns in total abundance*
+```{r}
+abund_spatial_synch_tw %>% 
+  drop_na() %>% 
+  filter(n.obs.pair>2) %>% 
+  filter(year_window.f %in% skipwindow) %>% 
+  filter(Geodist<2000) %>% 
+  filter(Geodist>0) %>% 
+   group_by(site_pair) %>% 
+  mutate(nwindows=n_distinct(year_window.f)) %>% 
+  filter(nwindows >10) %>% 
+  ggplot()+aes(sqrt(Geodist), Synchrony, col=year_window.f) +geom_smooth(method='lm', se=F)+
+  scale_color_manual(values= colorRampPalette(c("#5C4033", "#CC7722", "#FFD700"))(17))
+```
+
+# *Plot of 6 years mean spatial synchrony over time*
+```{r}
+abund_spatial_synch_tw %>% 
+drop_na() %>% 
+  filter(n.obs.pair>3) %>% 
+  filter(Geodist>0) %>% 
+  filter(Geodist<1000) %>% 
+  group_by(site_pair) %>% 
+  mutate(nwindows=n_distinct(year_window.f)) %>% 
+  filter(nwindows >10) %>% 
+  
+  group_by(site_pair, year_window.f, Geodist) %>% 
+  summarise(mean.spat.sync=mean(Synchrony)) %>% 
+   separate(year_window.f, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
+  mutate(Year_Midpoint = (start + end) / 2) %>% 
+  ggplot()+aes(Year_Midpoint, mean.spat.sync)+geom_smooth() +ylab('Mean spatial synchrony')+ xlab('Year window midpoint')+ggtitle('6 year window')
+
+
+  
+```
+
+
+
+
+##################################################
+####### *Time window 10 years* ##### *no profundal*
+
+# create a list to hold the time window of tatal abundance spatial synch
+```{r}
+abund_spatial_synch_tw10_list<-list()
+```
+
+# the loop to get time window abundance spat synch *not profundal sites*
+```{r}
+
+for(tw in 1:length(time.windowlist_10)){
+
+abund_spatial_synch_tw10_list[[tw]]=
+  
+benthos_clean_tot_abund %>% 
+  filter(Sampled.habitat != 'Profundal') %>% # remove profundal
+    select(SiteID, Year, CommAbund) %>% 
+  filter(Year %in% time.windowlist_10[[tw]]) %>% 
+    pivot_wider(names_from = Year,
+    names_sort = T, # sort the year column
+    values_from = CommAbund) %>%
+  
+  column_to_rownames("SiteID") %>%
+        t() %>% 
+      
+      # 3. Calculate Spearman Correlation
+      # use = "pairwise.complete.obs" handles NAs if sites have different year ranges
+      cor(., method = "spearman", use = "pairwise.complete.obs") %>% 
+  iCAMP::dist.3col() %>% 
+  mutate(year_window=tw_ID_10[tw]) %>% 
+  rename(Synchrony=dis)
+}
+
+
+```
+
+# there are more site pairs within the 10 years window, but many NAs are present in the overall synchrony df
+```{r}
+abund_spatial_synch_tw10_list[[1]]
+
+
+```
+
+
+# rbind the *abund spatial synchrony time window*, into a long format
+```{r}
+abund_spatial_synch_tw10<-
+rbindlist(abund_spatial_synch_tw10_list)
+
+#add the site pair infor
+abund_spatial_synch_tw10$site_pair<-
+  paste(abund_spatial_synch_tw10$name1, abund_spatial_synch_tw10$name2, sep="_")
+```
+
+
+
+# get the observation pairs in the time window 10 for abundance synchrony
+
+```{r}
+abund.synch_tw10_nobspair_list<-list()
+```
+
+# the loop to get the number of obs pairs in the abund synch time window
+```{r}
+
+for(tw in 1 : length(time.windowlist_10)) {
+  abund.synch_tw10_nobspair_list[[tw]]=
+benthos_clean_tot_abund %>% filter(Sampled.habitat != 'Profundal') %>% 
+    select(SiteID, Year, CommAbund) %>% 
+  filter(Year %in% time.windowlist_10[[tw]]) %>% 
+    pivot_wider(names_from = Year,
+    names_sort = T, # sort the year column
+    values_from = CommAbund) %>% 
+  n_obs_fun() %>% 
+    rename(n.obs.pairs=dis)
+}
+  
+
+abund.synch_tw10_nobspair_list[[1]]
+
+```
+
+# the long df of number obs pair for the timewindow abund synnchrony
+```{r}
+abund_spatial_synch_tw10_nobspair<-
+  rbindlist(abund.synch_tw10_nobspair_list)
+
+abund_spatial_synch_tw10_nobspair$site_pair<-
+  paste(abund_spatial_synch_tw10_nobspair$name1, abund_spatial_synch_tw10_nobspair$name2, sep="_")
+```
+
+#add the observation pair number to the abund synchrony time window df
+*Note the max obs.pair == time window of 10 years* That is the number of years contributing to the synch estimates
+```{r}
+abund_spatial_synch_tw10$n.obs.pair<-
+  abund_spatial_synch_tw10_nobspair$n.obs.pairs[match(abund_spatial_synch_tw10$site_pair, abund_spatial_synch_tw10_nobspair$site_pair)]
+```
+
+# add the Geodist (for now only available for Atlantic sites)
+```{r}
+abund_spatial_synch_tw10$Geodist<-
+  Spatial_synch_tot_abund$Geodist[match(abund_spatial_synch_tw10$site_pair, Spatial_synch_tot_abund$site_pair)]
+```
+
+```{r}
+abund_spatial_synch_tw10<-
+abund_spatial_synch_tw10 %>% 
+  mutate(year_window.f=as.factor(year_window)) 
+```
+
+```{r}
+skipwindow10<-levels(abund_spatial_synch_tw10$year_window.f)[seq(1, 28, by = 2)]
+```
+
+# *Plot of spatial synchrony patterns 10years window*
+```{r}
+abund_spatial_synch_tw10 %>% 
+  drop_na() %>% 
+  filter(n.obs.pair>3) %>% 
+  filter(year_window.f %in% skipwindow10) %>% 
+  filter(Geodist<1000) %>% 
+  filter(Geodist>0) %>% 
+  group_by(site_pair) %>% 
+  mutate(nwindows=n_distinct(year_window.f)) %>% 
+  filter(nwindows >10) %>% 
+  
+  ggplot()+aes(sqrt(Geodist), Synchrony, col=year_window.f) +geom_smooth(method='lm', se=F)+
+  scale_color_manual(values= colorRampPalette(c("#5C4033", "#CC7722", "#FFD700"))(14))+ggtitle('10 year window')
+
+
+```
+```{r}
+n_distinct(abund_spatial_synch_tw10$year_window.f)
+```
+
+# Plot of spatial synch abund over time for 10years window
+```{r}
+abund_spatial_synch_tw10 %>% 
+drop_na() %>% 
+  filter(n.obs.pair>5) %>% 
+  filter(Geodist>0) %>% 
+  filter(Geodist<1000) %>% 
+  group_by(site_pair) %>% 
+  mutate(nwindows=n_distinct(year_window.f)) %>% 
+  filter(nwindows >10) %>% 
+  group_by(site_pair, year_window.f, Geodist) %>% 
+  summarise(mean.spat.sync=mean(Synchrony)) %>% 
+   separate(year_window.f, into = c("start", "end"), sep = "_", convert = TRUE) %>% 
+  mutate(Year_Midpoint = (start + end) / 2) %>%
+  ggplot()+aes(Year_Midpoint, mean.spat.sync)+geom_smooth() +ylab('Mean spatial synchrony')+ xlab('Year window midpoint')+ggtitle('10 year window')
+
+
+```
+
+
+
+## Plot spatial synch 10y window, for beginning and end of time series
+```{r}
+abund_spatial_synch_tw10 %>% 
+  drop_na() %>% 
+  filter(n.obs.pair>5) %>% 
+  filter(year_window.f %in% tw_ID_10[c(1,2,27,28)]) %>% 
+  #filter(year_window.f %in% skipwindow10) %>% 
+  filter(Geodist<1000) %>% 
+  filter(Geodist>0) %>% 
+  group_by(site_pair) %>% 
+   mutate(nwindows=n_distinct(year_window.f)) %>% 
+  filter(nwindows >3) %>% 
+  
+  ggplot()+aes(sqrt(Geodist), Synchrony, col=year_window.f) +geom_smooth(method='lm', se=F)+
+  scale_color_manual(values= c("#5C4033",'brown4', "#CC7722", "#FFD700"))
+
+
+```
+
+```{r}
+abund_spatial_synch_tw10 %>% 
+  drop_na() %>% 
+  filter(n.obs.pair>5) %>% 
+  filter(Geodist<1500) %>% 
+  filter(Geodist>0) %>% 
+  filter(year_window.f %in% skipwindow10[4]) %>% 
+  ggplot()+aes(sqrt(Geodist), Synchrony)+geom_smooth(method='lm')
+```
+
+
+
+
+
+############ LATITUDE effect ##########
+
+```{r}
+library(gtools)
+```
+
+# create a site metadata with BIN lat values
+```{r}
+benthos_sites_metad<-
+  benthos_clean_subs %>% 
+  select(Country, Lake.river, Sampled.habitat, SiteID, Lon, Lat)
+
+
+# Bin the LAT based on quantiles
+benthos_sites_metad$LatBin<-quantcut(benthos_sites_metad$Lat, 3)
+
+benthos_sites_metad$LatBin.   #. Levels: [48.5,57.9] (57.9,62.3] (62.3,69.9]
+
+
+# Bin the LAT based on cut ranges
+benthos_sites_metad<-
+benthos_sites_metad %>% 
+  mutate(LatCUT= cut_interval(Lat, n=3, labels=c("Low", "Medium", "High")))
+```
+
+# Assign the LAT BIN to the total abundance spatial synchrony (NO timewindow)
+```{r}
+Spatial_synch_tot_abund$LatBinSite1<-
+  benthos_sites_metad$LatBin[match(Spatial_synch_tot_abund$name1, benthos_sites_metad$SiteID)]
+
+Spatial_synch_tot_abund$LatBinSite2<-
+  benthos_sites_metad$LatBin[match(Spatial_synch_tot_abund$name2, benthos_sites_metad$SiteID)]
+
+
+Spatial_synch_tot_abund$LatCUTSite1<-
+  benthos_sites_metad$LatCUT[match(Spatial_synch_tot_abund$name1, benthos_sites_metad$SiteID)]
+
+Spatial_synch_tot_abund$LatCUTSite2<-
+  benthos_sites_metad$LatCUT[match(Spatial_synch_tot_abund$name2, benthos_sites_metad$SiteID)]
+
+
+
+```
+
+
+```{r}
+Spatial_synch_tot_abund %>% 
+  drop_na() %>% 
+  filter(LatBinSite1 == LatBinSite2) %>% 
+  filter(obs.pairs>10) %>% 
+   filter(Geodist<1000) %>% 
+  ggplot()+aes(LatBinSite1, dis)+ geom_boxplot()
+
+
+Spatial_synch_tot_abund %>% 
+  drop_na() %>% 
+  filter(LatBinSite1 == LatBinSite2) %>% 
+  filter(obs.pairs>9) %>% 
+  filter(Geodist<1000) %>% 
+  ggplot()+aes(LatBinSite1, Geodist)+ geom_boxplot()
+
+
+table(Spatial_synch_tot_abund$LatBinSite1)
+  
+```
+
+
+```{r}
+Spatial_synch_tot_abund %>% 
+  drop_na() %>% 
+  filter(LatCUTSite1 == LatCUTSite2) %>% 
+  filter(obs.pairs>9) %>% 
+   filter(Geodist<1000) %>% 
+  ggplot()+aes(LatCUTSite1, dis)+ geom_boxplot()
+
+
+Spatial_synch_tot_abund %>% 
+  drop_na() %>% 
+  filter(LatCUTSite1 == LatCUTSite2) %>% 
+  filter(obs.pairs>9) %>% 
+   filter(Geodist<500) %>% 
+  ggplot()+aes(LatCUTSite1, Geodist)+ geom_boxplot()
+
+```
+
+
+
+
+# assign the LAT bin to the abundance synchrony tw10
+```{r}
+abund_spatial_synch_tw10$LatBinSite1<-
+  benthos_sites_metad$LatBin[match(abund_spatial_synch_tw10$name1, benthos_sites_metad$SiteID)]
+
+abund_spatial_synch_tw10$LatBinSite2<-
+  benthos_sites_metad$LatBin[match(abund_spatial_synch_tw10$name2, benthos_sites_metad$SiteID)]
+
+```
+
+
+
 
